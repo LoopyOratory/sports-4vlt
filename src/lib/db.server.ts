@@ -28,7 +28,9 @@ export function castVote(eventId: number, vote: string, userHash: string): boole
 }
 
 export function getVoteSummary(eventId: number) {
-  return db.get(sql`
+  // note: drizzle's raw db.get(sql) returns a value array, not a keyed row —
+  // read the keyed rows from db.all and take the first.
+  const rows = db.all(sql`
     SELECT
       COUNT(*) as total_votes,
       COUNT(*) FILTER (WHERE vote = 'home') as home_votes,
@@ -41,7 +43,8 @@ export function getVoteSummary(eventId: number) {
     home_votes: number
     draw_votes: number
     away_votes: number
-  }
+  }[]
+  return rows[0]
 }
 
 export function getUserVote(eventId: number, userHash: string): string | null {
@@ -81,10 +84,11 @@ export function createAccumulator(
 
 export function getAccumulator(code: string) {
   // Slip pages live for 7 days, then expire automatically
-  const row = db.get(sql`
+  const rows = db.all(sql`
     SELECT * FROM public_accumulators
     WHERE code = ${code} AND created_at >= datetime('now', '-7 days')
-  `) as Record<string, unknown> | undefined
+  `) as Record<string, unknown>[]
+  const row = rows[0]
   if (row) {
     // Increment views
     db.run(sql`UPDATE public_accumulators SET views = views + 1 WHERE code = ${code}`)
