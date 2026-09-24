@@ -1,5 +1,5 @@
 import type { BsdParams } from './bsd'
-import { cacheKey, cachedGet, cachedSet } from './bsd-cache.server'
+import { cacheKey, cachedGet, cachedGetStale, cachedSet } from './bsd-cache.server'
 
 const BASE_URL = process.env.BSD_BASE_URL ?? 'https://sports.bzzoiro.com/api/v2'
 
@@ -57,7 +57,12 @@ export async function bsdGet<T>(path: string, params: BsdParams = {}): Promise<T
   const key = cacheKey(path, query)
   const cached = cachedGet<T>(key)
   if (cached) return cached
-  if (breakerIsOpen()) throw new Error(`BSD breaker open on ${path}`)
+  if (breakerIsOpen()) {
+    // Breaker open: degraded mode — serve the last-known payload if we have one.
+    const stale = cachedGetStale<T>(key)
+    if (stale) return stale
+    throw new Error(`BSD breaker open on ${path}`)
+  }
 
   const delays = [800, 2_000, 4_000]
 
@@ -90,7 +95,8 @@ export async function bsdGet<T>(path: string, params: BsdParams = {}): Promise<T
       )
     }
   } catch (error) {
-    const stale = cachedGet<T>(key)
+    // Upstream failed: stale-serve from L2 (expired rows included).
+    const stale = cachedGetStale<T>(key)
     if (stale) return stale
     throw error
   }
